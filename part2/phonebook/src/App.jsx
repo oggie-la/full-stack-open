@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { useEffect } from 'react'
-import axios from 'axios'
+import numbersService from './services/numbers'
 import Filter from './components/Filter'
 import PersonForm from './components/PersonForm'
 import Persons from './components/Persons'
@@ -13,41 +13,69 @@ const App = () => {
   const [filteredIds, setFilteredIds] = useState(new Set(persons.map(person => person.id)))
 
   useEffect(() => {
-    axios
-      .get('http://localhost:3001/notes')
-      .then(response => {
-        setPersons(response.data)
-        setFilter('')
-      })
+    numbersService.getAll().then(personsResponse => {
+      setPersons(personsResponse)
+      setFilter('')
+    })
   }, [])
 
-  const handleAddName = (e) => {
+  const handleAddName = async e => {
     e.preventDefault()
     const newNameTrimmed = newName.trim()
-    if (persons.some(person => person.name === newNameTrimmed)) {
-      alert(`"${newNameTrimmed}" has already been added to the phonebook`)
+    const newNameTrimmedLc = newNameTrimmed.toLowerCase()
+
+    const existingPerson = persons.find(person => person.name.toLowerCase() === newNameTrimmedLc)
+    if (existingPerson) {
+      const isConfirmed = window.confirm(
+        `"${newNameTrimmed}" has already been added to the phonebook, replace the old number with a new one?`,
+      )
+      if (isConfirmed) {
+        await numbersService.update(existingPerson.id, { ...existingPerson, number: newNumber })
+        const personsResponse = await numbersService.getAll()
+        setPersons(personsResponse)
+        setFilter('')
+        setNewName('')
+        setNewNumber('')
+      }
       return
     }
-    const newPersonList = persons.concat({
-      id: persons.length + 1,
+
+    const newPerson = {
       name: newNameTrimmed,
       number: newNumber.trim(),
-      nameLc: newNameTrimmed.toLowerCase()
+      nameLc: newNameTrimmed.toLowerCase(),
+    }
+
+    numbersService.create(newPerson).then(newPersonResponse => {
+      setPersons(persons.concat(newPersonResponse))
+      setFilter('')
+      setNewName('')
+      setNewNumber('')
     })
-    
-    setPersons(newPersonList)
-    setFilter('')
-    // setFilteredIds(new Set(newPersonList.map(person => person.id)))
   }
 
-  const handleFilterChange = (e) => {
+  const handleFilterChange = e => {
     const newFilter = e.target.value.toLowerCase()
     const filteredIds = persons
-      .filter(person => person.nameLc && person.nameLc.includes(newFilter) || person.name.toLowerCase().includes(newFilter))
+      .filter(
+        person =>
+          (person.nameLc && person.nameLc.includes(newFilter)) ||
+          person.name.toLowerCase().includes(newFilter),
+      )
       .map(person => person.id)
 
     setFilter(newFilter)
     setFilteredIds(new Set(filteredIds))
+  }
+
+  const handleDelete = async personId => {
+    const person = persons.find(person => person.id === personId).name || personId
+    const isConfirmed = window.confirm(`Delete ${person}?`)
+    if (!isConfirmed) return
+    await numbersService.remove(personId)
+    const personsResponse = await numbersService.getAll()
+    setPersons(personsResponse)
+    setFilter('')
   }
 
   return (
@@ -57,12 +85,17 @@ const App = () => {
       <PersonForm
         name={newName}
         number={newNumber}
-        handleNameChange={(e) => setNewName(e.target.value)}
-        handleNumberChange={(e) => setNewNumber(e.target.value)}
+        handleNameChange={e => setNewName(e.target.value)}
+        handleNumberChange={e => setNewNumber(e.target.value)}
         handleAddName={handleAddName}
       />
       <h2>Numbers</h2>
-      <Persons persons={persons} filteredIds={filteredIds} isFilteringOn={filter.length} />
+      <Persons
+        persons={persons}
+        filteredIds={filteredIds}
+        isFilteringOn={filter.length}
+        handleDelete={handleDelete}
+      />
     </div>
   )
 }
